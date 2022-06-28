@@ -10,4 +10,4 @@ require (
 	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
 )
 
-go 1.16
+go 1.13
