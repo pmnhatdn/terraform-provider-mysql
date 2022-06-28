@@ -7,5 +7,7 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/hashicorp/terraform-plugin-sdk v1.0.0
 	github.com/keybase/go-crypto v0.0.0-20181017165231-e696c8039bba // indirect
-	golang.org/x/net v0.0.0-20220520151302-bc2c85ada10a
+	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
 )
+
+go 1.16
