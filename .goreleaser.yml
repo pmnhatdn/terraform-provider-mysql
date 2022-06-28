@@ -16,12 +16,9 @@ builds:
   ldflags:
     - '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}'
   goos:
-    - freebsd
-    - windows
     - linux
   goarch:
     - amd64
-    - '386'
     - arm
     - arm64
   ignore:
