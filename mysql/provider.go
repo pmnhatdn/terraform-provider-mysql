@@ -156,11 +156,13 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	}
 
 	conf := mysql.Config{
-		User:                    d.Get("username").(string),
-		Passwd:                  d.Get("password").(string),
-		Net:                     proto,
-		Addr:                    endpoint,
-		TLSConfig:               "rds",
+		User:   d.Get("username").(string),
+		Passwd: d.Get("password").(string),
+		Net:    proto,
+		Addr:   endpoint,
+		Params: map[string]string{
+			"tls": "rds",
+		},
 		AllowNativePasswords:    d.Get("authentication_plugin").(string) == nativePasswords,
 		AllowCleartextPasswords: d.Get("authentication_plugin").(string) == cleartextPasswords,
 	}
@@ -237,7 +239,7 @@ func connectToMySQL(conf *MySQLConfiguration) (*sql.DB, error) {
 	// when Terraform thinks it's available and when it is actually available.
 	// This is particularly acute when provisioning a server and then immediately
 	// trying to provision a database on it.
-	retryError := resource.Retry(5*time.Minute, func() *resource.RetryError {
+	retryError := resource.Retry(5, func() *resource.RetryError {
 		db, err = sql.Open("mysql", dsn)
 		if err != nil {
 			return resource.RetryableError(err)
@@ -252,7 +254,7 @@ func connectToMySQL(conf *MySQLConfiguration) (*sql.DB, error) {
 	})
 
 	if retryError != nil {
-		return nil, fmt.Errorf("Could not connect to server: %s", retryError)
+		return nil, fmt.Errorf("Could not connect to server: %s %s", retryError, conf)
 	}
 	db.SetConnMaxLifetime(conf.MaxConnLifetime)
 	db.SetMaxOpenConns(conf.MaxOpenConns)
