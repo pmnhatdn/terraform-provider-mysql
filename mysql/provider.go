@@ -163,8 +163,8 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		Params: map[string]string{
 			"tls": "rds",
 		},
-		AllowNativePasswords:    true
-		AllowCleartextPasswords: true
+		AllowNativePasswords:    true,
+		AllowCleartextPasswords: true,
 	}
 
 	dialer, err := makeDialer(d)
