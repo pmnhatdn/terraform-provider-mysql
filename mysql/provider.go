@@ -1,9 +1,13 @@
 package mysql
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"fmt"
+	"io/ioutil"
 	"net"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -18,6 +22,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 
 	"golang.org/x/net/proxy"
+	// "github.com/aws/aws-sdk-go/aws/credentials"
+	// "github.com/aws/aws-sdk-go/service/rds/rdsutils"
 )
 
 const (
@@ -111,6 +117,30 @@ func Provider() terraform.ResourceProvider {
 	}
 }
 
+func registerRDSMysqlCert(c *http.Client) (interface{}, error) {
+	resp, err := c.Get("https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem")
+	if err != nil {
+		return nil, err
+	}
+
+	// defer fileutil.CloseLoggingAnyError(resp.Body)
+	pem, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	rootCertPool := x509.NewCertPool()
+	if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
+		return nil, fmt.Errorf("couldn't append certs from pem")
+	}
+
+	err = mysql.RegisterTLSConfig("rds", &tls.Config{RootCAs: rootCertPool, InsecureSkipVerify: true})
+	if err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 
 	var endpoint = d.Get("endpoint").(string)
@@ -120,12 +150,17 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		proto = "unix"
 	}
 
+	_, err := registerRDSMysqlCert(http.DefaultClient)
+	if err != nil {
+		return nil, err
+	}
+
 	conf := mysql.Config{
 		User:                    d.Get("username").(string),
 		Passwd:                  d.Get("password").(string),
 		Net:                     proto,
 		Addr:                    endpoint,
-		TLSConfig:               d.Get("tls").(string),
+		TLSConfig:               "rds",
 		AllowNativePasswords:    d.Get("authentication_plugin").(string) == nativePasswords,
 		AllowCleartextPasswords: d.Get("authentication_plugin").(string) == cleartextPasswords,
 	}
