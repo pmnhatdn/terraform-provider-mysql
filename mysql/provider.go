@@ -16,7 +16,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/hashicorp/go-version"
 
-	// "github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
@@ -235,16 +235,27 @@ func connectToMySQL(conf *MySQLConfiguration) (*sql.DB, error) {
 	var db *sql.DB
 	var err error
 
-	db, err = sql.Open("mysql", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("Could not connect to server: %s %s", err, dsn)
-	}
+	// When provisioning a database server there can often be a lag between
+	// when Terraform thinks it's available and when it is actually available.
+	// This is particularly acute when provisioning a server and then immediately
+	// trying to provision a database on it.
+	retryError := resource.Retry(5*time.Minute, func() *resource.RetryError {
+		db, err = sql.Open("mysql", dsn)
+		if err != nil {
+			return resource.RetryableError(err)
+		}
 
-	err = db.Ping()
-	if err != nil {
-		return nil, fmt.Errorf("Could not ping server:  %s %s", err, dsn)
-	}
+		err = db.Ping()
+		if err != nil {
+			return resource.RetryableError(err)
+		}
 
+		return nil
+	})
+
+	if retryError != nil {
+		return nil, fmt.Errorf("Could not connect to server: %s", retryError)
+	}
 	db.SetConnMaxLifetime(conf.MaxConnLifetime)
 	db.SetMaxOpenConns(conf.MaxOpenConns)
 	return db, nil
