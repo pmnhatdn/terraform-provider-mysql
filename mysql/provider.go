@@ -100,7 +100,7 @@ func Provider() terraform.ResourceProvider {
 
 			"authentication_plugin": {
 				Type:         schema.TypeString,
-				Optional:     false,
+				Optional:     true,
 				Default:      nativePasswords,
 				ValidateFunc: validation.StringInSlice([]string{cleartextPasswords, nativePasswords, awsIAMAuth}, true),
 			},
