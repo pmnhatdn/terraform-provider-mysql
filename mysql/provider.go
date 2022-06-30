@@ -21,14 +21,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/service/rds/rdsutils"
 	"golang.org/x/net/proxy"
-	// "github.com/aws/aws-sdk-go/aws/credentials"
-	// "github.com/aws/aws-sdk-go/service/rds/rdsutils"
 )
 
 const (
 	cleartextPasswords = "cleartext"
 	nativePasswords    = "native"
+	awsIAMAuth         = "aws_auth"
 )
 
 type MySQLConfiguration struct {
@@ -99,9 +100,9 @@ func Provider() terraform.ResourceProvider {
 
 			"authentication_plugin": {
 				Type:         schema.TypeString,
-				Optional:     true,
+				Optional:     false,
 				Default:      nativePasswords,
-				ValidateFunc: validation.StringInSlice([]string{cleartextPasswords, nativePasswords}, true),
+				ValidateFunc: validation.StringInSlice([]string{cleartextPasswords, nativePasswords, awsIAMAuth}, true),
 			},
 		},
 
@@ -117,7 +118,7 @@ func Provider() terraform.ResourceProvider {
 	}
 }
 
-func registerRDSMysqlCert(c *http.Client) (interface{}, error) {
+func registerRDSMysqlCert(c *http.Client, tlsName string) (interface{}, error) {
 	resp, err := c.Get("https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem")
 	if err != nil {
 		return nil, err
@@ -134,40 +135,67 @@ func registerRDSMysqlCert(c *http.Client) (interface{}, error) {
 		return nil, fmt.Errorf("couldn't append certs from pem")
 	}
 
-	err = mysql.RegisterTLSConfig("rds", &tls.Config{RootCAs: rootCertPool, InsecureSkipVerify: true})
+	err = mysql.RegisterTLSConfig(tlsName, &tls.Config{RootCAs: rootCertPool, InsecureSkipVerify: true})
 	if err != nil {
 		return nil, err
 	}
 	return nil, nil
 }
 
-func providerConfigure(d *schema.ResourceData) (interface{}, error) {
+func generateRDSAuthToken(host string, username string) (string, error) {
+	creds := credentials.NewSharedCredentials("", "default")
+	region := "ap-northeast-1"
 
-	var endpoint = d.Get("endpoint").(string)
+	token, err := rdsutils.BuildAuthToken(host, region, username, creds)
+
+	if err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+func providerConfigure(d *schema.ResourceData) (interface{}, error) {
+	endpoint := d.Get("endpoint").(string)
 
 	proto := "tcp"
 	if len(endpoint) > 0 && endpoint[0] == '/' {
 		proto = "unix"
 	}
 
-	_, err := registerRDSMysqlCert(http.DefaultClient)
-	if err != nil {
-		return nil, err
-	}
-
+	var err error
+	username := d.Get("username").(string)
 	conf := mysql.Config{
-		User:   d.Get("username").(string),
-		Passwd: d.Get("password").(string),
-		Net:    proto,
-		Addr:   endpoint,
-		Params: map[string]string{
-			"tls": "rds",
-		},
-		AllowNativePasswords:    true,
-		AllowCleartextPasswords: true,
+		User: username,
+		Net:  proto,
+		Addr: endpoint,
 	}
 
-	dialer, err := makeDialer(d)
+	authenticationPlugin := d.Get("authentication_plugin").(string)
+	if authenticationPlugin == awsIAMAuth {
+		tlsName := "aws_rds"
+		_, err = registerRDSMysqlCert(http.DefaultClient, tlsName)
+		if err != nil {
+			return nil, err
+		}
+		conf.TLSConfig = tlsName
+
+		conf.Passwd, err = generateRDSAuthToken(endpoint, username)
+		if err != nil {
+			return nil, err
+		}
+
+		conf.AllowNativePasswords = true
+		conf.AllowCleartextPasswords = true
+	} else {
+		conf.TLSConfig = d.Get("tls").(string)
+		conf.Passwd = d.Get("password").(string)
+		conf.AllowNativePasswords = (authenticationPlugin == nativePasswords)
+		conf.AllowCleartextPasswords = (authenticationPlugin == cleartextPasswords)
+	}
+
+	var dialer proxy.Dialer
+	dialer, err = makeDialer(d)
 	if err != nil {
 		return nil, err
 	}
