@@ -126,7 +126,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		Net:                     proto,
 		Addr:                    endpoint,
 		TLSConfig:               d.Get("tls").(string),
-		AllowNativePasswords:    d.Get("authentication_plugin").(string) == nativePasswords,
+		AllowNativePasswords:    true
 		AllowCleartextPasswords: d.Get("authentication_plugin").(string) == cleartextPasswords,
 	}
 
